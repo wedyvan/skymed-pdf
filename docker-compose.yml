@@ -1,0 +1,13 @@
+services:
+  wtt-service:
+    build: .
+    container_name: wtt-service
+    volumes:
+      - ./logs:/app/logs
+      - /mnt/mirth/ORU/REPORTIN:/app/laudos
+    ports:
+      - '6587:3000'
+    # Informa ao Docker para carregar as variáveis deste arquivo
+    env_file:
+      - .env
+    restart: unless-stopped
