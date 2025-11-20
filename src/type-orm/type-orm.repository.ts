@@ -174,7 +174,7 @@ export class TypeOrmRepository {
           mensagem: 'Salvo no banco e movido para pasta processados',
         });
         this.logger.log(
-          `Arquivo ${nomeArquivo} processado com sucesso (ID: ${arquivoSalvo.id}).`,
+          `Arquivo ${nomeArquivo} processado com sucesso (ID: ${arquivoSalvo.idIntegracao}).`,
         );
       } catch (error) {
         this.logger.error(

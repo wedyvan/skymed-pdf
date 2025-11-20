@@ -16,7 +16,6 @@ import { ScheduleModule } from '@nestjs/schedule';
     HttpModule, // For Firebase integration
     DataBaseModule,
     ScheduleModule.forRoot(),
-    CacheModule,
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: ['.env'],

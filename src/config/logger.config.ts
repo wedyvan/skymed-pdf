@@ -21,7 +21,6 @@ export const winstonConfig: WinstonModuleOptions = {
       format: 'DD-MMM-YYYY HH:mm:ss',
     }),
     prettyPrint(),
-    json(),
     errors({ stack: true }),
   ),
   transports: [
