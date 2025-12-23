@@ -10,6 +10,8 @@ import { APP_INTERCEPTOR, APP_PIPE } from '@nestjs/core';
 import { LoggerInterceptor } from './interceptors/logger.interceptor';
 import { ZodValidationPipe } from 'nestjs-zod';
 import { ScheduleModule } from '@nestjs/schedule';
+import { SkymedOrmRepository } from './type-orm/skymed-orm.repository';
+import { SkymedService } from './skymed/integrar-pdf.service';
 
 @Module({
   imports: [
@@ -25,6 +27,8 @@ import { ScheduleModule } from '@nestjs/schedule';
   providers: [
     AppService,
     TypeOrmRepository,
+    SkymedOrmRepository,
+    SkymedService,
     {
       provide: APP_INTERCEPTOR,
       useClass: LoggerInterceptor,
@@ -34,6 +38,6 @@ import { ScheduleModule } from '@nestjs/schedule';
       useClass: ZodValidationPipe,
     },
   ],
-  exports: [TypeOrmRepository],
+  exports: [TypeOrmRepository, SkymedOrmRepository, SkymedService],
 })
 export class AppModule {}

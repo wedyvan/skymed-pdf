@@ -1,17 +1,14 @@
 import {
-  BadRequestException,
   HttpException,
   HttpStatus,
   Inject,
   Injectable,
-  InternalServerErrorException,
   Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { MedicoPlantaoEntity } from '../entities/medico-plantao.entity';
-import { DataSource, In, Repository, View } from 'typeorm';
+import { DataSource, In, Repository } from 'typeorm';
 import { SolComEntity } from '../entities/sol-com.entity';
-import { UsuarioMvEntity } from '../entities/usuarios-mv.entity';
 import { LaudoExamePedidoPdfEntity } from '../entities/laudo-pdf.entity';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -20,13 +17,11 @@ import { promisify } from 'util';
 import { ConfigService } from '@nestjs/config';
 import { AuxLaudosEntity } from '../entities/aux-laudos.entity';
 import { file } from 'tmp-promise';
-import { execFile, spawn } from 'child_process';
+import { execFile } from 'child_process';
 import { writeFile, readFile } from 'fs/promises';
 import { WttEventsEntity } from '../postgresql/entities/wtt-events.entity';
 import { WorklistRequestEntity } from '../entities/worklist-request.entity';
 import { ViewWorklistRequestEntity } from '../entities/view-worklist.entity';
-import { Cron, CronExpression } from '@nestjs/schedule';
-import { ArquivoPdfEntity } from '../entities/pdf.entity';
 
 const execFileAsync = promisify(execFile);
 const writeFileAsync = promisify(fs.writeFile);
@@ -44,7 +39,6 @@ export class TypeOrmRepository {
   private _wttEvents: Repository<WttEventsEntity>;
   private _mvWorklist: Repository<WorklistRequestEntity>;
   private _viewMvWorklist: Repository<ViewWorklistRequestEntity>;
-  private _arquivoPdfService: Repository<ArquivoPdfEntity>;
   private caminho: string;
   private logger = new Logger(TypeOrmRepository.name);
   constructor(
@@ -66,7 +60,6 @@ export class TypeOrmRepository {
     this._viewMvWorklist = this.dataSource.getRepository(
       ViewWorklistRequestEntity,
     );
-    this._arquivoPdfService = this.dataSource.getRepository(ArquivoPdfEntity);
   }
   async testePostgres() {
     const result = await this._mvWorklist.find({
@@ -115,181 +108,6 @@ export class TypeOrmRepository {
       take: 500,
     });
   } // ViewWorklistRequest
-
-  @Cron('*/1 * * * *')
-  async processarTodosPdfsDaPasta(): Promise<object[]> {
-    this.logger.log(`Iniciando varredura do diretório: ${this.caminho}`);
-    let nomesDosArquivos: string[];
-
-    try {
-      // 1. Ler todos os arquivos/pastas no diretório
-      nomesDosArquivos = await readDirAsync(this.caminho);
-    } catch (error) {
-      this.logger.error(
-        `Falha ao ler o diretório: ${this.caminho}`,
-        error.stack,
-      );
-      throw new InternalServerErrorException(
-        'Não foi possível ler o diretório de PDFs.',
-      );
-    }
-
-    // 2. Filtrar apenas os arquivos que terminam com .pdf
-    const nomesPdfs = nomesDosArquivos.filter(
-      (nome) => path.extname(nome).toLowerCase() === '.pdf',
-    );
-
-    if (nomesPdfs.length === 0) {
-      this.logger.warn('Nenhum arquivo PDF encontrado no diretório.');
-      return [];
-    }
-
-    this.logger.log(
-      `Encontrados ${nomesPdfs.length} arquivos PDF. Iniciando processamento...`,
-    );
-
-    const relatorioProcessamento = [];
-
-    // 3. Processar cada arquivo PDF sequencialmente
-    for (const nomeArquivo of nomesPdfs) {
-      const caminhoCompleto = path.join(this.caminho, nomeArquivo);
-
-      try {
-        // 4. Ler o conteúdo binário (Buffer) do arquivo
-        const fileBuffer = await readFileAsync(caminhoCompleto);
-        const codigoIntegracao = this.extrairNumeroDoNomeDoArquivo(nomeArquivo);
-
-        // 5. Salvar no banco usando o método que já tínhamos
-        const arquivoSalvo = await this.salvarPdf(
-          fileBuffer,
-          nomeArquivo,
-          Number(codigoIntegracao),
-          'application/pdf', // Tipo MIME fixo
-        );
-        await this.moverArquivoParaProcessados(caminhoCompleto);
-        relatorioProcessamento.push({
-          nome: nomeArquivo,
-          status: 'sucesso',
-          id: arquivoSalvo.id,
-          mensagem: 'Salvo no banco e movido para pasta processados',
-        });
-        this.logger.log(
-          `Arquivo ${nomeArquivo} processado com sucesso (ID: ${arquivoSalvo.idIntegracao}).`,
-        );
-      } catch (error) {
-        this.logger.error(
-          `Falha ao processar o arquivo: ${nomeArquivo}`,
-          error.stack,
-        );
-        relatorioProcessamento.push({
-          nome: nomeArquivo,
-          status: 'falha',
-          erro: error.message,
-        });
-      }
-    }
-
-    this.logger.log('Processamento da pasta concluído.');
-    return relatorioProcessamento;
-  }
-
-  private extrairNumeroDoNomeDoArquivo(nomeArquivo: string): string | null {
-    // A expressão regular busca: 'file_' seguido por um grupo de captura (\d+)
-    // que representa um ou mais dígitos, seguido por um ponto (\.).
-    const regex: RegExp = /file_(\d+)\./;
-
-    const resultado = nomeArquivo.match(regex);
-
-    // Verifica se a expressão regular encontrou o padrão e se capturou o grupo de dígitos.
-    if (resultado && resultado.length > 1) {
-      // O resultado[1] contém o primeiro grupo de captura (o que está entre parênteses), que é o número.
-      return resultado[1];
-    } else {
-      return null;
-    }
-  }
-
-  // @Cron('*/1 * * * *')
-  async testePdf() {
-    const result = await this._arquivoPdfService.find({
-      take: 10,
-    });
-    return result;
-  }
-
-  /**
-   * Método de apoio: Salva um buffer no banco de dados.
-   * (O mesmo método da resposta anterior, agora usado pelo processador em lote)
-   */
-  async salvarPdf(
-    fileBuffer: Buffer,
-    nomeArquivo: string,
-    codigoIntegracao: number,
-    tipoMime: string,
-  ): Promise<ArquivoPdfEntity> {
-    try {
-      // 1. Verificação Lógica
-      const existeRegistro = await this.existeRegistro(codigoIntegracao);
-
-      if (existeRegistro) {
-        // Isso vai interromper o fluxo e pular para o catch
-        throw new BadRequestException(
-          `Já existe um registro com o código integração ${codigoIntegracao}`,
-        );
-      }
-
-      // 2. Preparação e Salvamento
-      const novoArquivo = this._arquivoPdfService.create({
-        nomeArquivo: nomeArquivo,
-        tipoMime: tipoMime,
-        idIntegracao: codigoIntegracao,
-        dadosPdf: fileBuffer, // Buffer binário
-        txTipoArquivo: 'pdf',
-      });
-
-      const arquivoSalvo = await this._arquivoPdfService.save(novoArquivo);
-
-      // 3. Limpeza para retorno (Performance)
-      delete arquivoSalvo.dadosPdf;
-      return arquivoSalvo;
-    } catch (error) {
-      // CORREÇÃO AQUI:
-      // Se o erro já for uma exceção controlada (como o BadRequest acima), apenas repasse.
-      if (error instanceof HttpException) {
-        throw error;
-      }
-
-      // Se for um erro desconhecido de banco, aí sim vira Internal Server Error
-      throw new InternalServerErrorException(
-        `Falha no banco ao salvar ${nomeArquivo}: ${error.message}`,
-      );
-    }
-  }
-
-  async existeRegistro(codigoIntegracao: number): Promise<boolean> {
-    // O countBy faz um "SELECT COUNT(*) ...", que é instantâneo e não baixa o PDF
-    const count = await this._arquivoPdfService.countBy({
-      idIntegracao: codigoIntegracao,
-    });
-
-    return count > 0;
-  }
-
-  private async moverArquivoParaProcessados(caminhoCompletoAtual: string) {
-    // Define o caminho da pasta 'processados' (baseado na pasta onde o arquivo está)
-    const pastaOrigem = path.dirname(caminhoCompletoAtual);
-    const pastaDestino = path.join(pastaOrigem, 'processados');
-    const nomeArquivo = path.basename(caminhoCompletoAtual);
-    const caminhoFinal = path.join(pastaDestino, nomeArquivo);
-
-    // 1. Cria a pasta se não existir (recursive: true evita erro se já existir)
-    await mkdirAsync(pastaDestino, { recursive: true });
-
-    // 2. Move o arquivo (Rename funciona como move se for no mesmo volume)
-    await renameAsync(caminhoCompletoAtual, caminhoFinal);
-
-    this.logger.log(`Arquivo movido com sucesso para: ${caminhoFinal}`);
-  }
 
   async getWorklistMv() {
     return await this._viewMvWorklist.find({
