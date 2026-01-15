@@ -11,8 +11,8 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { ArquivoPdfEntity } from '../entities/pdf.entity';
 import { ArquivoAtendimentoEntity } from '../entities/aquivo_atendimentos.entity';
 import { PwDocumentoClinicoEntity } from '../entities/pw_documento_clinico.entity';
-import * as fs from 'fs';
 import { ArquivoDocumentoEntity } from '../entities/aquivo_documento.entity';
+import { ConfigService } from '@nestjs/config';
 
 export class JobSkymedDto {
   codAtendimento_p?: number;
@@ -23,12 +23,34 @@ export class JobSkymedDto {
 @Injectable()
 export class SkymedService {
   private readonly logger = new Logger(SkymedService.name);
+  private readonly codigoPrestador: number;
+  private readonly codigoObjeto: number;
+  private readonly codigoTipoDocumento: number;
+  private readonly codigoStatusArquivoAtendimento: number;
+  private readonly codigoUsuario: string;
 
   constructor(
     @Inject('PRIMARY_DATA_SOURCE')
     private dataSource: DataSource,
     private readonly skymedOrmRepository: SkymedOrmRepository,
-  ) {}
+    private readonly configService: ConfigService,
+  ) {
+    this.codigoPrestador = this.configService.get<number>(
+      'CODIGO_PRESTADOR_INTEGRACAO',
+    );
+    this.codigoObjeto = this.configService.get<number>(
+      'CODIGO_OBJETO_INTEGRACAO',
+    );
+    this.codigoUsuario = this.configService.get<string>(
+      'CD_USUARIO_INTEGRACAO',
+    );
+    this.codigoTipoDocumento = this.configService.get<number>(
+      'CODIGO_TIPO_DOCUMENTO_INTEGRACAO',
+    );
+    this.codigoStatusArquivoAtendimento = this.configService.get<number>(
+      'CODIGO_STATUS_ARQUIVO_ATENDIMENTO',
+    );
+  }
 
   async integrarGed(dto: JobSkymedDto) {
     return await this.dataSource.transaction(async (manager: EntityManager) => {
@@ -93,9 +115,7 @@ export class SkymedService {
         }
 
         // 3. Variáveis de negócio
-        const vCdTipoDocumento = 2;
         const vDsNomeArquivo = `SKYMED_${skymedArquivo.txTipoArquivo?.toUpperCase()}`;
-        const vCdUsuario = 'SKYMED';
 
         // 4. Sequências
         const [{ NEXT_DOC }] = await manager.query(
@@ -114,17 +134,17 @@ export class SkymedService {
         await Promise.all([
           manager.save(PwDocumentoClinicoEntity, {
             cdDocumentoClinico: NEXT_DOC,
-            cdTipoDocumento: vCdTipoDocumento,
+            cdTipoDocumento: this.codigoTipoDocumento,
             cdPaciente: vAtendime.CD_PACIENTE,
             cdAtendimento: vAtendime.CD_ATENDIMENTO,
-            cdUsuario: vCdUsuario,
-            cdPrestador: 1688,
+            cdUsuario: this.codigoUsuario,
+            cdPrestador: this.codigoPrestador,
             tpStatus: 'FECHADO',
             dhReferencia: new Date(),
             dhCriacao: new Date(),
             dhFechamento: new Date(),
             tpExtensao: 'PDF_ANEXO',
-            cdObjeto: 372,
+            cdObjeto: this.codigoObjeto,
             nmDocumento: vDsNomeArquivo,
             dhDocumento: new Date(),
           }),
@@ -142,12 +162,12 @@ export class SkymedService {
             cdArquivoDocumento: NEXT_ARQ,
             cdAtendimento: vAtendime.CD_ATENDIMENTO,
             dhCriacao: new Date(),
-            nmUsuario: vCdUsuario,
+            nmUsuario: this.codigoUsuario,
             cdPaciente: vAtendime.CD_PACIENTE,
-            cdPwTipoDocumento: vCdTipoDocumento,
+            cdPwTipoDocumento: this.codigoTipoDocumento,
             cdDocumentoClinico: NEXT_DOC,
-            cdStatusArquivoAtendimento: 2,
-            cdObjetoSelecionado: 372,
+            cdStatusArquivoAtendimento: this.codigoStatusArquivoAtendimento,
+            cdObjetoSelecionado: this.codigoObjeto,
           }),
           manager
             .getRepository(ArquivoPdfEntity)
