@@ -9,6 +9,8 @@ services:
       - /home/igor/DEV/skymed-pdf/pdf:/app/pdf
     ports:
       - "3000:3000"
+    env_file:
+          - .env
     networks:
       - web_network
     command: npm run start:dev

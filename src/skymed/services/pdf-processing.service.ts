@@ -1,78 +1,115 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import pLimit from 'p-limit';
 import * as path from 'path';
+import pLimit from 'p-limit';
+
+import { ArquivoPdfEntity } from '../entities/pdf.entity';
 import { SkymedOrmRepository } from '../repositories/skymed-repository';
 import { FileStorageService } from './file-storage-service.service';
+import { SkymedService } from './skymed.service';
 
 @Injectable()
 export class PdfProcessingService {
   private readonly logger = new Logger(PdfProcessingService.name);
-  private isProcessing = false; // Previne execução sobreposta do Cron
+  private isProcessing = false;
 
   constructor(
     private readonly fileService: FileStorageService,
     private readonly repository: SkymedOrmRepository,
+    private readonly skymedService: SkymedService,
     private readonly configService: ConfigService,
   ) {}
 
   async processarPasta() {
-    if (this.isProcessing) return;
+    if (this.isProcessing) {
+      this.logger.warn('Processamento em andamento, pulando execução...');
+      return;
+    }
 
     try {
       this.isProcessing = true;
       const caminhoRaiz = this.configService.get<string>('CAMINHO_PDFS');
 
-      // 1. Busca o que tem na pasta e o que o banco espera
-      const [nomesNaPasta, nomesNoBanco] = await Promise.all([
+      // 1. Busca sincronizada: O que tem na pasta e o que o banco diz que falta
+      const [nomesNaPasta, arquivosPendentes] = await Promise.all([
         this.fileService.listarPdfs(caminhoRaiz),
-        this.repository.buscarNomesEsperados(),
+        this.repository.buscarArquivosPendentes(),
       ]);
 
-      // 2. FILTRO: Só processa o que existe nos dois lugares
-      const paraProcessar = nomesNaPasta.filter((nome) =>
-        nomesNoBanco.includes(nome),
+      // 2. Filtra: Apenas arquivos que estão fisicamente na pasta E pendentes no banco
+      const paraProcessar = arquivosPendentes.filter((arq) =>
+        nomesNaPasta.includes(arq.nomeArquivo),
       );
 
       if (paraProcessar.length === 0) {
-        this.logger.debug('Nenhum PDF pendente para integração.');
+        this.logger.debug('Nada para processar no momento.');
         return;
       }
 
       this.logger.log(
-        `Iniciando integração de ${paraProcessar.length} arquivos.`,
+        `Iniciando integração de ${paraProcessar.length} arquivos...`,
       );
 
-      // 3. Orquestra o processamento limitado
+      // 3. Concorrência controlada (p-limit) para não estourar memória/banco
       const limit = pLimit(3);
       await Promise.all(
-        paraProcessar.map((nome) =>
-          limit(() => this.processarArquivoUnico(caminhoRaiz, nome)),
+        paraProcessar.map((arquivo) =>
+          limit(() => this.executarFluxoCompleto(caminhoRaiz, arquivo)),
         ),
       );
     } catch (error) {
-      this.logger.error('Falha na orquestração da pasta', error.stack);
+      this.logger.error(
+        'Falha crítica no processamento da pasta:',
+        error.stack,
+      );
     } finally {
       this.isProcessing = false;
     }
   }
 
-  private async processarArquivoUnico(diretorio: string, nome: string) {
-    const caminhoCompleto = path.join(diretorio, nome);
+  private async executarFluxoCompleto(
+    diretorio: string,
+    arquivo: ArquivoPdfEntity,
+  ) {
+    const caminhoCompleto = path.join(diretorio, arquivo.nomeArquivo);
 
     try {
-      // 1. Lê o arquivo
+      // Passo A: Ler do disco
       const buffer = await this.fileService.lerArquivo(caminhoCompleto);
 
-      // 2. Salva no Oracle (Blob)
-      await this.repository.atualizarDadosPdf(nome, buffer);
+      // Passo B: Atualizar BLOB na tabela de controle (Oracle)
+      await this.repository.atualizarBlob(arquivo.nomeArquivo, buffer);
 
-      // 3. Move para pasta de sucesso
-      await this.fileService.moverParaProcessados(caminhoCompleto, nome);
+      // Passo C: Executar a lógica pesada de integração GED (Inserts MV)
+      await this.skymedService.integrarGed({
+        codAtendimento_p: arquivo.cdAtendimento,
+        nr_cpf_p: arquivo.nrCpf,
+        ds_arquivo_p: arquivo.nomeArquivo,
+      });
 
-      this.logger.log(`[SUCESSO] ${nome} processado.`);
+      // Passo D: Mover arquivo físico para a pasta 'processados'
+      await this.fileService.moverArquivo(
+        caminhoCompleto,
+        arquivo.nomeArquivo,
+        'processados',
+      );
+
+      this.logger.log(`[SUCESSO] ${arquivo.nomeArquivo} integrado e movido.`);
     } catch (error) {
-      this.logger.error(`[ERRO] ${nome}: ${error.message}`);
+      this.logger.error(`[FALHA] ${arquivo.nomeArquivo}: ${error.message}`);
+      // Aqui você poderia implementar uma lógica de mover para uma pasta 'erro' se desejar
+      // Verifica se o arquivo físico ainda existe na origem antes de mover para 'erros'
+      const existe = await this.fileService.existe(caminhoCompleto);
+      if (existe && !(error instanceof NotFoundException)) {
+        await this.fileService.moverArquivo(
+          caminhoCompleto,
+          arquivo.nomeArquivo,
+          'erros',
+        );
+        this.logger.warn(
+          `[REMOVIDO] ${arquivo.nomeArquivo} movido para pasta de erros.`,
+        );
+      }
     }
   }
 }

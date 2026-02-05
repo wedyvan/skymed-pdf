@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import * as fs from 'fs/promises';
 import * as path from 'path';
-
+export type TipoDestino = 'processados' | 'erros';
 @Injectable()
 export class FileStorageService {
   private readonly logger = new Logger(FileStorageService.name);
@@ -25,15 +25,16 @@ export class FileStorageService {
     return fs.readFile(caminho);
   }
 
-  async moverParaProcessados(
+  async moverArquivo(
     caminhoOrigem: string,
     nomeArquivo: string,
+    tipo: TipoDestino,
   ): Promise<void> {
     const diretorioRaiz = path.dirname(caminhoOrigem);
-    const pastaProcessados = path.join(diretorioRaiz, 'processados');
+    const pasta = path.join(diretorioRaiz, tipo);
 
-    await fs.mkdir(pastaProcessados, { recursive: true });
-    await fs.rename(caminhoOrigem, path.join(pastaProcessados, nomeArquivo));
+    await fs.mkdir(pasta, { recursive: true });
+    await fs.rename(caminhoOrigem, path.join(pasta, nomeArquivo));
   }
 
   async existe(caminho: string): Promise<boolean> {
