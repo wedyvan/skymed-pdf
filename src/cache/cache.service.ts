@@ -22,4 +22,19 @@ export class CacheService {
   private minutosParaMs(minutos: number): number {
     return minutos * 60 * 1000;
   }
+  async getOrUpdateCache<T>(
+    key: string,
+    ttl: string,
+    fetchFn: () => Promise<T>,
+    forceUpdate = false,
+  ): Promise<T> {
+    if (!forceUpdate) {
+      const cached = await this.get<T>(key);
+      if (cached) return cached;
+    }
+
+    const data = await fetchFn();
+    await this.set(key, data, ttl);
+    return data;
+  }
 }

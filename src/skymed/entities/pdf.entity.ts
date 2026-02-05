@@ -6,7 +6,7 @@ import {
   PrimaryColumn,
 } from 'typeorm';
 
-@Entity({ name: 'ARQUIVOS_PDF', schema: 'SKYMED' })
+@Entity({ name: 'ARQUIVOS_PDF', schema: 'WSANTANA' })
 export class ArquivoPdfEntity {
   @PrimaryColumn({ name: 'ID', type: 'number' })
   id: number;

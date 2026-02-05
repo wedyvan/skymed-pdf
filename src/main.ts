@@ -3,7 +3,6 @@ import { AppModule } from './app.module';
 import { initOracleClient } from 'oracledb';
 import { ConfigService } from '@nestjs/config';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
-import { patchNestJsSwagger } from 'nestjs-zod';
 import { WinstonModule } from 'nest-winston';
 import { winstonConfig } from './config/logger.config';
 
@@ -18,7 +17,6 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
     logger,
   });
-  patchNestJsSwagger();
   const config = new DocumentBuilder()
     .setTitle(`Documentação`)
     .setDescription('Documentação')

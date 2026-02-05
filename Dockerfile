@@ -1,5 +1,5 @@
 # Etapa 1: Build da aplicação
-FROM node:22 AS builder
+FROM node:24 AS builder
 
 # Diretório de trabalho
 WORKDIR /app
@@ -20,7 +20,7 @@ RUN npm run build
 
 
 # Etapa 2: Produção
-FROM node:22-slim AS production
+FROM node:24-slim AS production
 
 # Instala dependências do sistema para Oracle Instant Client
 RUN apt-get update && apt-get install -y \

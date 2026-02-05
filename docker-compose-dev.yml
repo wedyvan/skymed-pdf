@@ -1,0 +1,18 @@
+services:
+  nestjs:
+    build:
+      context: .
+      dockerfile: Dockerfile-dev.dockerfile
+    container_name: skymed
+    volumes:
+      - .:/home/node/app # Monta toda a pasta do projeto no container
+      - /home/igor/DEV/skymed-pdf/pdf:/app/pdf
+    ports:
+      - "3000:3000"
+    networks:
+      - web_network
+    command: npm run start:dev
+
+networks:
+  web_network:
+    driver: bridge

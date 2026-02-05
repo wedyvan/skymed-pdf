@@ -10,6 +10,7 @@ import { ZodValidationException } from 'nestjs-zod';
 import { Observable, catchError, tap, throwError } from 'rxjs';
 import * as dns from 'dns';
 import { promisify } from 'util';
+import { ZodError } from 'zod';
 
 @Injectable()
 export class LoggerInterceptor implements NestInterceptor {
@@ -83,7 +84,9 @@ export class LoggerInterceptor implements NestInterceptor {
 
         // Capturar e registrar erros de validação do Zod
         if (error instanceof ZodValidationException) {
-          this.logger.error('Erro de validação:', error.getZodError().format());
+          const zodError = error.getZodError() as ZodError;
+
+          this.logger.error('Erro de validação:', zodError.format());
         }
 
         return throwError(() => error);

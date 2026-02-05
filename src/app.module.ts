@@ -1,15 +1,14 @@
 import { HttpModule } from '@nestjs/axios';
 import { Logger, Module } from '@nestjs/common';
 import { AppController } from './app.controller';
-import { AppService } from './app.service';
 import { ConfigModule } from '@nestjs/config';
 import { DataBaseModule } from './data-base/data-base.module';
-import { TypeOrmRepository } from './type-orm/type-orm.repository';
 import { CacheModule } from './cache/cache.module';
 import { APP_INTERCEPTOR, APP_PIPE } from '@nestjs/core';
 import { LoggerInterceptor } from './interceptors/logger.interceptor';
 import { ZodValidationPipe } from 'nestjs-zod';
 import { ScheduleModule } from '@nestjs/schedule';
+import { SkymedModule } from './skymed/skymed.module';
 
 @Module({
   imports: [
@@ -20,11 +19,10 @@ import { ScheduleModule } from '@nestjs/schedule';
       isGlobal: true,
       envFilePath: ['.env'],
     }),
+    SkymedModule,
   ],
   controllers: [AppController],
   providers: [
-    AppService,
-    TypeOrmRepository,
     {
       provide: APP_INTERCEPTOR,
       useClass: LoggerInterceptor,
@@ -34,6 +32,6 @@ import { ScheduleModule } from '@nestjs/schedule';
       useClass: ZodValidationPipe,
     },
   ],
-  exports: [TypeOrmRepository],
+  exports: [],
 })
 export class AppModule {}
